@@ -8,7 +8,8 @@ import {
     CodeBracketIcon, XMarkIcon, SparklesIcon, PaperAirplaneIcon,
     DevicePhoneMobileIcon, ComputerDesktopIcon, MicrophoneIcon,
     ArrowUturnLeftIcon, ArrowUturnRightIcon, CommandLineIcon,
-    CursorArrowRaysIcon, EyeIcon
+    CursorArrowRaysIcon, EyeIcon, PencilSquareIcon, TrashIcon,
+    SwatchIcon, ArrowsPointingOutIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 
@@ -48,6 +49,7 @@ interface ContextMenuState {
   visible: boolean;
   targetDescription?: string;
   targetTagName?: string;
+  targetInnerHtml?: string;
 }
 
 const LoadingStep = ({ text, active, completed }: { text: string, active: boolean, completed: boolean }) => (
@@ -142,7 +144,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
     const [deviceMode, setDeviceMode] = useState<'desktop' | 'mobile'>('desktop');
     const [isListening, setIsListening] = useState(false);
     
-    // New States for Inspection/Editing
     const [interactionMode, setInteractionMode] = useState<InteractionMode>('interact');
     const [inspectedElement, setInspectedElement] = useState<InspectedElement | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, visible: false });
@@ -168,7 +169,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         }
     }, [creation]);
 
-    // Handle iframe interactions
     useEffect(() => {
         const iframe = iframeRef.current;
         if (!iframe || !creation?.html || viewMode !== 'preview') return;
@@ -177,27 +177,35 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             const doc = iframe.contentDocument;
             if (!doc) return;
 
-            // Inject styles for highlighting
-            const style = doc.createElement('style');
+            const styleId = 'gemini-preview-styles';
+            let style = doc.getElementById(styleId) as HTMLStyleElement;
+            if (!style) {
+                style = doc.createElement('style');
+                style.id = styleId;
+                doc.head.appendChild(style);
+            }
+            
             style.textContent = `
                 .gemini-inspector-hover {
                     outline: 2px solid #3b82f6 !important;
+                    outline-offset: -2px !important;
                     background-color: rgba(59, 130, 246, 0.1) !important;
-                    cursor: default !important;
+                    transition: all 0.1s ease;
                 }
                 .gemini-edit-hover {
                     outline: 2px dashed #f59e0b !important;
+                    outline-offset: -2px !important;
+                    background-color: rgba(245, 158, 11, 0.05) !important;
                     cursor: pointer !important;
+                    transition: all 0.1s ease;
                 }
             `;
-            doc.head.appendChild(style);
 
             const handleMouseOver = (e: Event) => {
                 if (interactionMode === 'interact') return;
                 e.stopPropagation();
                 const target = e.target as HTMLElement;
                 if (target === doc.body || target === doc.documentElement) return;
-                
                 target.classList.add(interactionMode === 'inspect' ? 'gemini-inspector-hover' : 'gemini-edit-hover');
             };
 
@@ -221,33 +229,40 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                         tagName: target.tagName.toLowerCase(),
                         id: target.id,
                         className: target.className.replace('gemini-inspector-hover', '').trim(),
-                        text: target.innerText.substring(0, 50),
+                        text: target.innerText.substring(0, 100),
                         computedStyles: {
                             color: computed.color,
                             backgroundColor: computed.backgroundColor,
                             fontSize: computed.fontSize,
+                            fontWeight: computed.fontWeight,
                             fontFamily: computed.fontFamily,
                             padding: computed.padding,
-                            margin: computed.margin
+                            margin: computed.margin,
+                            borderRadius: computed.borderRadius,
+                            border: computed.border,
+                            display: computed.display,
+                            position: computed.position
                         }
                     });
                 } else if (interactionMode === 'edit') {
-                    // Calculate position relative to the iframe container
-                    const rect = target.getBoundingClientRect();
                     const iframeRect = iframe.getBoundingClientRect();
                     
-                    // Generate a description for the AI
                     let description = target.tagName.toLowerCase();
                     if (target.id) description += `#${target.id}`;
-                    if (target.className.replace('gemini-edit-hover', '').trim()) description += `.${target.className.replace('gemini-edit-hover', '').trim().split(' ').join('.')}`;
-                    if (target.innerText) description += ` containing text "${target.innerText.substring(0, 20)}..."`;
+                    if (target.className.replace('gemini-edit-hover', '').trim()) {
+                        description += `.${target.className.replace('gemini-edit-hover', '').trim().split(' ').join('.')}`;
+                    }
+                    if (target.innerText) {
+                         description += ` (current text: "${target.innerText.substring(0, 20)}...")`;
+                    }
 
                     setContextMenu({
                         x: iframeRect.left + e.clientX,
                         y: iframeRect.top + e.clientY,
                         visible: true,
                         targetDescription: description,
-                        targetTagName: target.tagName.toLowerCase()
+                        targetTagName: target.tagName.toLowerCase(),
+                        targetInnerHtml: target.innerHTML
                     });
                 }
             };
@@ -264,7 +279,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         };
 
         iframe.addEventListener('load', loadHandler);
-        // If already loaded
         if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
             loadHandler();
         }
@@ -274,7 +288,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         };
     }, [creation?.html, interactionMode, viewMode]);
 
-    // Close context menu on outside click
     useEffect(() => {
         const closeMenu = () => setContextMenu(prev => ({ ...prev, visible: false }));
         window.addEventListener('click', closeMenu);
@@ -322,19 +335,21 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         let prompt = "";
         switch(action) {
             case 'color':
-                const color = window.prompt("Enter new color (e.g., #ff0000, blue):");
-                if (color) prompt = `Change the color/background of the element [${contextMenu.targetDescription}] to ${color}.`;
+                const color = window.prompt("New color or theme (e.g. 'ocean blue', '#ff5500', 'soft gradients'):");
+                if (color) prompt = `Update the style of the element [${contextMenu.targetDescription}] to use ${color}.`;
                 break;
             case 'text':
-                const text = window.prompt("Enter new text:");
-                if (text) prompt = `Change the text content of the element [${contextMenu.targetDescription}] to "${text}".`;
+                const text = window.prompt("Enter the new text content:");
+                if (text !== null) prompt = `Change the text content of the element [${contextMenu.targetDescription}] to "${text}".`;
                 break;
             case 'size':
-                const size = window.prompt("Enter new size (e.g., 20px, 1.5rem):");
-                if (size) prompt = `Change the size/font-size of the element [${contextMenu.targetDescription}] to ${size}.`;
+                const size = window.prompt("New size or dimensions (e.g. 'larger', 'wider', 'height: 400px'):");
+                if (size) prompt = `Adjust the size/scale of the element [${contextMenu.targetDescription}] to be ${size}.`;
                 break;
             case 'delete':
-                if (window.confirm("Remove this element?")) prompt = `Remove the element [${contextMenu.targetDescription}] from the DOM.`;
+                if (window.confirm("Are you sure you want to remove this element?")) {
+                    prompt = `Remove the element [${contextMenu.targetDescription}] completely from the application.`;
+                }
                 break;
         }
 
@@ -355,7 +370,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             return;
         }
 
-        const recognition = new window.webkitSpeechRecognition();
+        const recognition = new (window as any).webkitSpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = false;
         recognition.lang = 'en-US';
@@ -384,7 +399,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         }
       `}
     >
-      {/* Header */}
       <div className="bg-[#121214] px-4 py-3 flex items-center justify-between border-b border-zinc-800 shrink-0">
         <div className="flex items-center space-x-3">
            <div className="flex space-x-2 group/controls mr-2">
@@ -395,7 +409,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                 <div className="w-3 h-3 rounded-full bg-zinc-700 group-hover/controls:bg-green-500 transition-colors"></div>
            </div>
            
-           {/* Undo/Redo Controls */}
            {!isLoading && creation && (
                <div className="flex items-center space-x-1 border-l border-zinc-800 pl-3">
                    <button 
@@ -418,7 +431,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
            )}
         </div>
         
-        {/* Center: Device Toggles & Interaction Modes */}
         {!isLoading && creation && (
             <div className="flex items-center gap-4">
                 <div className="flex items-center bg-zinc-900 rounded-md p-0.5 border border-zinc-800">
@@ -443,21 +455,21 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                          <button 
                             onClick={() => { setInteractionMode('interact'); setInspectedElement(null); }}
                             className={`p-1.5 rounded transition-colors ${interactionMode === 'interact' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                            title="Interact Mode"
+                            title="Interact"
                         >
                             <CursorArrowRaysIcon className="w-4 h-4" />
                         </button>
                         <button 
                             onClick={() => { setInteractionMode('inspect'); setInspectedElement(null); }}
                             className={`p-1.5 rounded transition-colors ${interactionMode === 'inspect' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                            title="Inspect Element"
+                            title="Inspect"
                         >
                             <EyeIcon className="w-4 h-4" />
                         </button>
                         <button 
                             onClick={() => { setInteractionMode('edit'); setInspectedElement(null); }}
-                            className={`p-1.5 rounded transition-colors ${interactionMode === 'edit' ? 'bg-blue-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                            title="Click to Edit"
+                            className={`p-1.5 rounded transition-colors ${interactionMode === 'edit' ? 'bg-orange-600 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            title="Smart Edit"
                         >
                             <SparklesIcon className="w-4 h-4" />
                         </button>
@@ -466,13 +478,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             </div>
         )}
 
-        {/* Right: Actions */}
         <div className="flex items-center justify-end space-x-1">
             {!isLoading && creation && (
                 <>
                     <button 
                         onClick={() => setViewMode(prev => prev === 'preview' ? 'code' : 'preview')}
-                        title={viewMode === 'preview' ? "View Source Code" : "View App"}
+                        title={viewMode === 'preview' ? "View Source" : "View App"}
                         className={`p-1.5 rounded-md transition-all ${viewMode === 'code' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
                     >
                         <CodeBracketIcon className="w-4 h-4" />
@@ -481,7 +492,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                     {creation.originalImage && (
                          <button 
                             onClick={() => setShowSplitView(!showSplitView)}
-                            title={showSplitView ? "Show App Only" : "Compare with Original"}
+                            title={showSplitView ? "Hide Source Image" : "Show Source Image"}
                             className={`p-1.5 rounded-md transition-all ${showSplitView ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
                         >
                             <ViewColumnsIcon className="w-4 h-4" />
@@ -492,7 +503,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
 
                     <button 
                         onClick={handleExportHtml} 
-                        title="Download HTML"
+                        title="Download .html"
                         className="text-zinc-500 hover:text-zinc-300 transition-colors p-1.5 rounded-md hover:bg-zinc-800"
                     >
                         <CommandLineIcon className="w-4 h-4" />
@@ -500,7 +511,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
 
                     <button 
                         onClick={handleExportJson} 
-                        title="Export JSON Artifact"
+                        title="Export Artifact"
                         className="text-zinc-500 hover:text-zinc-300 transition-colors p-1.5 rounded-md hover:bg-zinc-800"
                     >
                         <ArrowDownTrayIcon className="w-4 h-4" />
@@ -510,40 +521,47 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="relative w-full flex-1 bg-[#09090b] flex overflow-hidden justify-center">
         {isRefining && (
-             <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center transition-all duration-300">
+             <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
                  <div className="flex flex-col items-center space-y-4">
                      <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                     <p className="text-zinc-200 font-mono text-sm animate-pulse">Refining Application...</p>
+                     <p className="text-zinc-200 font-mono text-sm">Refining with Gemini...</p>
                  </div>
              </div>
         )}
 
-        {/* Context Menu for Edit Mode */}
         {contextMenu.visible && interactionMode === 'edit' && (
             <div 
-                className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden min-w-[160px] animate-in fade-in zoom-in duration-200"
-                style={{ top: contextMenu.y, left: contextMenu.x }}
+                className="fixed z-[60] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200"
+                style={{ top: contextMenu.y + 10, left: contextMenu.x }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-900/50">
-                    <p className="text-[10px] font-mono uppercase text-zinc-500">{contextMenu.targetTagName}</p>
+                <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-950/50 flex items-center justify-between">
+                    <p className="text-[10px] font-mono uppercase text-zinc-400 tracking-wider">
+                        {contextMenu.targetTagName}
+                    </p>
+                    <button onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
+                        <XMarkIcon className="w-3 h-3 text-zinc-600 hover:text-zinc-400" />
+                    </button>
                 </div>
-                <div className="p-1">
-                    <button onClick={() => handleContextMenuAction('text')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 rounded flex items-center gap-2">
+                <div className="p-1.5 space-y-0.5">
+                    <button onClick={() => handleContextMenuAction('text')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
+                        <PencilSquareIcon className="w-4 h-4 text-zinc-500" />
                         <span>Edit Text</span>
                     </button>
-                    <button onClick={() => handleContextMenuAction('color')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 rounded flex items-center gap-2">
-                        <span>Change Color</span>
+                    <button onClick={() => handleContextMenuAction('color')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
+                        <SwatchIcon className="w-4 h-4 text-zinc-500" />
+                        <span>Change Style</span>
                     </button>
-                    <button onClick={() => handleContextMenuAction('size')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 rounded flex items-center gap-2">
-                        <span>Adjust Size</span>
+                    <button onClick={() => handleContextMenuAction('size')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
+                        <ArrowsPointingOutIcon className="w-4 h-4 text-zinc-500" />
+                        <span>Adjust Dimensions</span>
                     </button>
-                    <div className="h-px bg-zinc-700 my-1"></div>
-                    <button onClick={() => handleContextMenuAction('delete')} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded flex items-center gap-2">
-                        <span>Delete Element</span>
+                    <div className="h-px bg-zinc-800 my-1 mx-2"></div>
+                    <button onClick={() => handleContextMenuAction('delete')} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-md flex items-center gap-2.5 transition-colors">
+                        <TrashIcon className="w-4 h-4 opacity-70" />
+                        <span>Remove Element</span>
                     </button>
                 </div>
             </div>
@@ -558,102 +576,121 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                     </div>
-                    <h3 className="text-zinc-100 font-mono text-lg tracking-tight">Constructing Environment</h3>
-                    <p className="text-zinc-500 text-sm mt-2">Interpreting visual data...</p>
+                    <h3 className="text-zinc-100 font-mono text-lg tracking-tight">Creating Experience</h3>
                 </div>
                 <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
                     <div className="h-full bg-blue-500 animate-[loading_3s_ease-in-out_infinite] w-1/3"></div>
                 </div>
                  <div className="border border-zinc-800 bg-black/50 rounded-lg p-4 space-y-3 font-mono text-sm">
-                     <LoadingStep text="Analyzing visual inputs" active={loadingStep === 0} completed={loadingStep > 0} />
-                     <LoadingStep text="Identifying UI patterns" active={loadingStep === 1} completed={loadingStep > 1} />
-                     <LoadingStep text="Generating functional logic" active={loadingStep === 2} completed={loadingStep > 2} />
-                     <LoadingStep text="Compiling preview" active={loadingStep === 3} completed={loadingStep > 3} />
+                     <LoadingStep text="Analyzing input" active={loadingStep === 0} completed={loadingStep > 0} />
+                     <LoadingStep text="Structuring layout" active={loadingStep === 1} completed={loadingStep > 1} />
+                     <LoadingStep text="Injecting logic" active={loadingStep === 2} completed={loadingStep > 2} />
+                     <LoadingStep text="Booting app" active={loadingStep === 3} completed={loadingStep > 3} />
                  </div>
              </div>
           </div>
         ) : creation?.html ? (
           <>
-            {/* Split View Left */}
             {showSplitView && creation.originalImage && (
                 <div className="w-full md:w-1/2 h-full border-r border-zinc-800 bg-[#0c0c0e] relative flex flex-col shrink-0">
-                    <div className="absolute top-4 left-4 z-10 bg-black/80 backdrop-blur text-zinc-400 text-[10px] font-mono uppercase px-2 py-1 rounded border border-zinc-800">Input Source</div>
+                    <div className="absolute top-4 left-4 z-10 bg-black/80 backdrop-blur text-zinc-400 text-[10px] font-mono uppercase px-2 py-1 rounded border border-zinc-800">Source Asset</div>
                     <div className="w-full h-full p-6 flex items-center justify-center overflow-hidden">
                         {creation.originalImage.startsWith('data:application/pdf') ? (
                             <PdfRenderer dataUrl={creation.originalImage} />
                         ) : (
-                            <img src={creation.originalImage} alt="Original Input" className="max-w-full max-h-full object-contain shadow-xl border border-zinc-800/50 rounded" />
+                            <img src={creation.originalImage} alt="Input" className="max-w-full max-h-full object-contain shadow-xl border border-zinc-800/50 rounded" />
                         )}
                     </div>
                 </div>
             )}
 
-            {/* App Preview / Code View */}
-            <div className={`relative h-full bg-zinc-900/50 transition-all duration-500 flex items-center justify-center overflow-auto ${showSplitView && creation.originalImage ? 'w-full md:w-1/2' : 'w-full'}`}>
+            <div className={`relative h-full bg-zinc-900/50 flex items-center justify-center overflow-auto ${showSplitView && creation.originalImage ? 'w-full md:w-1/2' : 'w-full'}`}>
                  {viewMode === 'preview' ? (
                      <div 
-                        className={`transition-all duration-300 bg-white shadow-2xl overflow-hidden ${deviceMode === 'mobile' ? 'w-[375px] h-[667px] rounded-3xl border-8 border-zinc-800' : 'w-full h-full'}`}
+                        className={`transition-all duration-300 bg-white shadow-2xl overflow-hidden ${deviceMode === 'mobile' ? 'w-[375px] h-[667px] rounded-[3rem] border-[12px] border-zinc-800 relative' : 'w-full h-full'}`}
                      >
+                         {deviceMode === 'mobile' && (
+                             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-zinc-800 rounded-b-2xl z-20"></div>
+                         )}
                          <iframe
                             ref={iframeRef}
-                            title="Gemini Live Preview"
+                            title="Live Preview"
                             srcDoc={creation.html}
                             className="w-full h-full"
                             sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin"
                         />
                      </div>
                  ) : (
-                     <div className="w-full h-full p-6 overflow-auto">
-                         <pre className="text-xs font-mono text-zinc-300 bg-black/50 p-4 rounded-lg border border-zinc-800 whitespace-pre-wrap break-all">
-                             {creation.html}
-                         </pre>
+                     <div className="w-full h-full p-6 overflow-auto bg-zinc-950 font-mono text-[13px] leading-relaxed text-zinc-300">
+                         <div className="max-w-4xl mx-auto">
+                            <pre className="whitespace-pre-wrap break-all selection:bg-blue-500/30">
+                                {creation.html}
+                            </pre>
+                         </div>
                      </div>
                  )}
             </div>
             
-            {/* Inspector Panel - Only visible in inspect mode when an element is selected */}
             {interactionMode === 'inspect' && inspectedElement && (
-                <div className="absolute top-4 left-4 z-50 w-64 bg-zinc-900/90 backdrop-blur-md border border-zinc-700 rounded-lg p-4 shadow-xl text-xs font-mono text-zinc-300 pointer-events-none">
-                    <div className="flex items-center justify-between mb-2 border-b border-zinc-700 pb-2">
-                        <span className="font-bold text-blue-400 uppercase">{inspectedElement.tagName}</span>
-                        <span className="text-zinc-500">{inspectedElement.id ? `#${inspectedElement.id}` : ''}</span>
+                <div className="absolute top-4 left-4 z-50 w-72 bg-zinc-900/95 backdrop-blur-md border border-zinc-700 rounded-xl p-4 shadow-2xl text-[11px] font-mono text-zinc-300 overflow-hidden animate-in fade-in slide-in-from-left-4">
+                    <div className="flex items-center justify-between mb-3 border-b border-zinc-800 pb-2">
+                        <div className="flex items-center gap-2">
+                             <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                             <span className="font-bold text-blue-400 uppercase text-xs">{inspectedElement.tagName}</span>
+                        </div>
+                        <button onClick={() => setInspectedElement(null)}>
+                            <XMarkIcon className="w-3 h-3 text-zinc-600 hover:text-zinc-400" />
+                        </button>
                     </div>
-                    <div className="space-y-1.5">
-                        {inspectedElement.className && (
-                            <div className="break-words">
-                                <span className="text-zinc-500">Class:</span> <span className="text-yellow-600">.{inspectedElement.className.split(' ').join('.')}</span>
+                    
+                    <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar">
+                        {inspectedElement.id && (
+                            <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800">
+                                <span className="text-zinc-500 mr-2">ID:</span>
+                                <span className="text-orange-400">#{inspectedElement.id}</span>
                             </div>
                         )}
-                         <div className="grid grid-cols-2 gap-2 mt-2">
-                             <div>
-                                 <span className="text-zinc-500 block">Color</span>
-                                 <div className="flex items-center gap-1">
-                                    <div className="w-3 h-3 rounded-full border border-zinc-600" style={{ backgroundColor: inspectedElement.computedStyles.color }}></div>
-                                    <span>{inspectedElement.computedStyles.color}</span>
-                                 </div>
-                             </div>
-                             <div>
-                                 <span className="text-zinc-500 block">Bg</span>
-                                 <div className="flex items-center gap-1">
-                                    <div className="w-3 h-3 rounded-full border border-zinc-600" style={{ backgroundColor: inspectedElement.computedStyles.backgroundColor }}></div>
-                                    <span>{inspectedElement.computedStyles.backgroundColor}</span>
-                                 </div>
-                             </div>
-                         </div>
-                         <div className="mt-2">
-                            <span className="text-zinc-500 block">Font</span>
-                            <span className="truncate block">{inspectedElement.computedStyles.fontSize} {inspectedElement.computedStyles.fontFamily}</span>
-                         </div>
+                        
+                        {inspectedElement.className && (
+                            <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800">
+                                <span className="text-zinc-500 block mb-1">Classes:</span>
+                                <div className="flex flex-wrap gap-1">
+                                    {inspectedElement.className.split(' ').map((cls, i) => (
+                                        <span key={i} className="text-yellow-600">.{cls}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <span className="text-zinc-500 uppercase text-[9px] font-bold tracking-widest">Computed Styles</span>
+                            <div className="grid grid-cols-1 gap-1.5">
+                                {Object.entries(inspectedElement.computedStyles).map(([key, value]) => (
+                                    <div key={key} className="flex justify-between items-center py-1 border-b border-zinc-800/50 last:border-0">
+                                        <span className="text-zinc-500">{key.replace(/([A-Z])/g, '-$1').toLowerCase()}</span>
+                                        <span className="text-zinc-200 text-right">{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {inspectedElement.text && (
+                            <div className="space-y-1">
+                                <span className="text-zinc-500 uppercase text-[9px] font-bold tracking-widest">Inner Text</span>
+                                <p className="text-zinc-400 italic bg-zinc-950/50 p-2 rounded leading-tight">
+                                    "{inspectedElement.text}"
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
             
-            {/* Refinement Bar - Hidden in Edit Mode to avoid clutter */}
-            {interactionMode === 'interact' && (
+            {interactionMode === 'interact' && !isRefining && (
                 <div className="absolute bottom-6 left-0 right-0 z-40 flex justify-center px-4 pointer-events-none">
                     <form 
                         onSubmit={handleRefineSubmit}
-                        className="w-full max-w-xl pointer-events-auto shadow-2xl shadow-black/50 rounded-full overflow-hidden flex items-center bg-zinc-900/90 backdrop-blur-md border border-zinc-700/50 focus-within:border-blue-500/50 focus-within:ring-1 focus-within:ring-blue-500/20 transition-all"
+                        className="w-full max-w-xl pointer-events-auto shadow-2xl shadow-black/50 rounded-full overflow-hidden flex items-center bg-zinc-900/90 backdrop-blur-md border border-zinc-700/50 focus-within:border-blue-500/50 transition-all"
                     >
                         <div className="pl-4 pr-2 text-zinc-400">
                             <SparklesIcon className="w-5 h-5" />
@@ -663,15 +700,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                             value={refineInput}
                             onChange={(e) => setRefineInput(e.target.value)}
                             disabled={isRefining}
-                            placeholder="Type a change... (e.g., 'Add a dark mode button')"
+                            placeholder="Type a specific change..."
                             className="flex-1 bg-transparent border-none text-sm text-white placeholder-zinc-500 focus:ring-0 py-3 px-2 outline-none"
                         />
                         
                         <button
                             type="button"
                             onClick={toggleListening}
-                            className={`p-2 rounded-full transition-all mr-1 ${isListening ? 'text-red-400 bg-red-500/10 animate-pulse' : 'text-zinc-400 hover:text-zinc-200'}`}
-                            title="Voice Input"
+                            className={`p-2 rounded-full transition-all mr-1 ${isListening ? 'text-red-400 bg-red-500/10' : 'text-zinc-400 hover:text-zinc-200'}`}
                         >
                             <MicrophoneIcon className="w-4 h-4" />
                         </button>
@@ -689,6 +725,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
           </>
         ) : null}
       </div>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #27272a;
+            border-radius: 4px;
+        }
+      `}</style>
     </div>
   );
 };

@@ -52,7 +52,7 @@ export async function bringToLife(prompt: string, fileBase64?: string, mimeType?
   }
 
   if (customCss) {
-      finalPrompt += `\n\nTECHNICAL CONSTRAINT: You must incorporate the following custom CSS rules into the generated application's <style> block:\n${customCss}`;
+      finalPrompt += `\n\nTECHNICAL REQUIREMENT: You MUST include the following custom CSS rules in the <style> block of the generated application. These rules should take priority and define the visual identity of the app:\n\n${customCss}`;
   }
 
   parts.push({ text: finalPrompt });
