@@ -248,22 +248,34 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                         className: target.className.replace('gemini-inspector-hover', '').trim(),
                         text: target.innerText.substring(0, 100),
                         computedStyles: {
-                            width: computed.width,
-                            height: computed.height,
+                            // Layout
                             display: computed.display,
                             position: computed.position,
+                            width: computed.width,
+                            height: computed.height,
+                            boxSizing: computed.boxSizing,
+                            zIndex: computed.zIndex,
+                            // Flexbox/Grid
                             flexDirection: computed.flexDirection,
                             justifyContent: computed.justifyContent,
                             alignItems: computed.alignItems,
+                            // Typography
                             color: computed.color,
-                            backgroundColor: computed.backgroundColor,
                             fontSize: computed.fontSize,
                             fontWeight: computed.fontWeight,
                             fontFamily: computed.fontFamily,
+                            lineHeight: computed.lineHeight,
+                            textAlign: computed.textAlign,
+                            // Spacing & Border
                             padding: computed.padding,
                             margin: computed.margin,
-                            borderRadius: computed.borderRadius,
                             border: computed.border,
+                            borderRadius: computed.borderRadius,
+                            // Visuals
+                            backgroundColor: computed.backgroundColor,
+                            boxShadow: computed.boxShadow,
+                            opacity: computed.opacity,
+                            cursor: computed.cursor
                         }
                     });
                 } else if (interactionMode === 'edit') {

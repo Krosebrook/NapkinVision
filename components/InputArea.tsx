@@ -64,9 +64,18 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   const handleFile = (file: File) => {
     setUploadError(null);
 
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+    const validTypes = [
+        'image/jpeg', 
+        'image/png', 
+        'image/webp', 
+        'image/heic', 
+        'application/pdf',
+        'image/gif',
+        'image/svg+xml'
+    ];
+    
     if (!validTypes.includes(file.type) && file.type !== '') {
-      setUploadError(`Unsupported format (${file.type || 'Unknown'}). Please upload JPEG, PNG, WebP or PDF.`);
+      setUploadError(`Unsupported format (${file.type || 'Unknown'}). Please upload JPEG, PNG, WebP, GIF or PDF.`);
       return;
     }
 
