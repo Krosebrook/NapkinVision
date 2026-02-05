@@ -1,20 +1,20 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Bring Anything to Life (Gemini 3)
 
-# Run and deploy your AI Studio app
+Turn sketches, floor plans, and artifacts into functional interactive applications instantly using Gemini 3.
 
-This contains everything you need to run your app locally.
+## 🚀 TL;DR
+1. **Setup**: No local installation required for core logic, runs as a native ESM React app.
+2. **Env Vars**: Requires `process.env.API_KEY` for Google GenAI.
+3. **PWA**: Installable on iOS/Android/Desktop with offline shell support.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1-SotRmPYv2n6M8PD1_VV5we1psyQOjOn
+## 🛠 Setup & Dev
+- **Local Dev**: Serve the root directory via any static server (e.g., `npx serve .`).
+- **Dependencies**: Loaded via ESM imports from `aistudiocdn.com`.
+- **Styling**: Tailwind CSS via CDN.
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🧪 Documentation Suite
+- [PWA Strategy](./PWA.md)
+- [Security Guidelines](./SECURITY.md)
+- [Deployment Guide](./DEPLOYMENT.md)
+- [Testing & Quality](./TESTING.md)
+- [Observability](./OBSERVABILITY.md)
