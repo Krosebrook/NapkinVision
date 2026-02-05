@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useState, useRef } from 'react';
-import { ArrowUpTrayIcon, CpuChipIcon, PaintBrushIcon, MicrophoneIcon, StopIcon, CodeBracketSquareIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, CpuChipIcon, PaintBrushIcon, MicrophoneIcon, StopIcon, CodeBracketSquareIcon, XMarkIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 
 interface InputAreaProps {
@@ -57,19 +57,22 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   const [customCss, setCustomCss] = useState('');
   const [showCssInput, setShowCssInput] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (file: File) => {
+    setUploadError(null);
+
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
-    if (!validTypes.includes(file.type)) {
-      alert(`Unsupported file type: ${file.type}. Please upload an Image (JPEG, PNG, WebP) or PDF.`);
+    if (!validTypes.includes(file.type) && file.type !== '') {
+      setUploadError(`Unsupported format (${file.type || 'Unknown'}). Please upload JPEG, PNG, WebP or PDF.`);
       return;
     }
 
     const maxSize = 15 * 1024 * 1024; // 15MB
     if (file.size > maxSize) {
-      alert(`File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Please upload a file smaller than 15MB.`);
+      setUploadError(`File too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Limit is 15MB.`);
       return;
     }
 
@@ -80,10 +83,13 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     if (e.target.files && e.target.files[0]) {
         handleFile(e.target.files[0]);
     }
+    // Reset the input value so the same file can be selected again if needed
+    if (e.target) e.target.value = '';
   };
 
   const onAreaClick = () => {
     if (!isGenerating && !disabled) {
+        setUploadError(null);
         fileInputRef.current?.click();
     }
   };
@@ -91,9 +97,20 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
+    setUploadError(null);
+    
     if (disabled || isGenerating) return;
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
+    
+    // Check if the drop actually contains files
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        if (e.dataTransfer.files.length > 1) {
+            setUploadError("Please drop only one file at a time.");
+            return;
+        }
+        handleFile(e.dataTransfer.files[0]);
+    } else {
+        // This handles cases where user drops text or other non-file items
+        setUploadError("Please drop a valid image or PDF file.");
     }
   }, [disabled, isGenerating, selectedStyle, prompt, customCss]);
 
@@ -101,6 +118,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     e.preventDefault();
     if (!disabled && !isGenerating) {
         setIsDragging(true);
+        setUploadError(null);
     }
   }, [disabled, isGenerating]);
 
@@ -112,7 +130,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   const toggleListening = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!('webkitSpeechRecognition' in window)) {
-        alert("Voice input is not supported in this browser.");
+        setUploadError("Voice input is not supported in this browser.");
         return;
     }
 
@@ -126,9 +144,15 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     recognition.interimResults = false;
     recognition.lang = 'en-US';
 
-    recognition.onstart = () => setIsListening(true);
+    recognition.onstart = () => {
+        setIsListening(true);
+        setUploadError(null);
+    };
     recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
+    recognition.onerror = () => {
+        setIsListening(false);
+        setUploadError("Voice recognition error. Please try again.");
+    };
     
     recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
@@ -140,6 +164,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
 
   const handleManualGenerate = (e: React.MouseEvent) => {
       e.stopPropagation();
+      setUploadError(null);
       onGenerate(prompt, undefined, selectedStyle, customCss);
   };
 
@@ -164,7 +189,9 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
             py-12 sm:py-16
             ${isDragging 
               ? 'border-blue-500 bg-zinc-900/50 shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]' 
-              : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-900/40'
+              : uploadError 
+                ? 'border-red-500/50 bg-red-900/5 hover:border-red-500' 
+                : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-900/40'
             }
             ${isGenerating ? 'pointer-events-none opacity-50' : ''}
           `}
@@ -173,10 +200,10 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                  style={{backgroundImage: 'linear-gradient(#ffffff 1px, transparent 1px), linear-gradient(90deg, #ffffff 1px, transparent 1px)', backgroundSize: '32px 32px'}}>
             </div>
             
-            <div className={`absolute top-4 left-4 w-4 h-4 border-l-2 border-t-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
-            <div className={`absolute top-4 right-4 w-4 h-4 border-r-2 border-t-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
-            <div className={`absolute bottom-4 left-4 w-4 h-4 border-l-2 border-b-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
-            <div className={`absolute bottom-4 right-4 w-4 h-4 border-r-2 border-b-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
+            <div className={`absolute top-4 left-4 w-4 h-4 border-l-2 border-t-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : uploadError ? 'border-red-500' : 'border-zinc-600'}`}></div>
+            <div className={`absolute top-4 right-4 w-4 h-4 border-r-2 border-t-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : uploadError ? 'border-red-500' : 'border-zinc-600'}`}></div>
+            <div className={`absolute bottom-4 left-4 w-4 h-4 border-l-2 border-b-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : uploadError ? 'border-red-500' : 'border-zinc-600'}`}></div>
+            <div className={`absolute bottom-4 right-4 w-4 h-4 border-r-2 border-b-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : uploadError ? 'border-red-500' : 'border-zinc-600'}`}></div>
 
             <div className="relative z-10 flex flex-col items-center text-center space-y-6 w-full px-4">
                 <div className="space-y-2 md:space-y-4 w-full max-w-3xl">
@@ -193,15 +220,30 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                     <input 
                         type="text" 
                         value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Add specific instructions (e.g. 'Make it a dark theme dashboard')"
-                        className="w-full bg-black/40 border border-zinc-700 rounded-full py-3 pl-5 pr-24 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                        onChange={(e) => {
+                            setPrompt(e.target.value);
+                            setUploadError(null);
+                        }}
+                        placeholder="Add specific instructions..."
+                        className="w-full bg-black/40 border border-zinc-700 rounded-full py-3 pl-5 pr-32 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         <button 
                             type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowCssInput(!showCssInput);
+                            }}
+                            className={`p-1.5 rounded-full transition-all ${showCssInput ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            title="Add Custom CSS"
+                        >
+                            <CodeBracketSquareIcon className="w-4 h-4" />
+                        </button>
+                        <button 
+                            type="button"
                             onClick={toggleListening}
                             className={`p-1.5 rounded-full transition-all ${isListening ? 'text-red-400 bg-red-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            title="Voice Input"
                         >
                             {isListening ? <StopIcon className="w-4 h-4 animate-pulse" /> : <MicrophoneIcon className="w-4 h-4" />}
                         </button>
@@ -217,19 +259,11 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                     </div>
                 </div>
 
-                <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-                    <button 
-                        type="button"
-                        onClick={() => setShowCssInput(!showCssInput)}
-                        className="text-xs text-zinc-500 flex items-center gap-1 hover:text-blue-400 transition-colors mx-auto"
-                    >
-                        <CodeBracketSquareIcon className="w-3 h-3" />
-                        {showCssInput ? 'Hide Custom CSS' : 'Add Custom CSS'}
-                    </button>
-                    
-                    {showCssInput && (
-                        <div className="relative mt-2">
+                {showCssInput && (
+                    <div className="w-full max-w-md animate-in fade-in slide-in-from-top-1 duration-200" onClick={(e) => e.stopPropagation()}>
+                        <div className="relative">
                              <textarea
+                                autoFocus
                                 value={customCss}
                                 onChange={(e) => setCustomCss(e.target.value)}
                                 placeholder=".card { border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }"
@@ -244,20 +278,28 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                                 </button>
                             )}
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
 
                 <div className="flex flex-col items-center space-y-4 mt-2 pointer-events-none">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-zinc-800 border border-zinc-700 shadow-xl transition-transform duration-500 ${isDragging ? 'scale-110' : ''}`}>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shadow-xl transition-transform duration-500 ${isDragging ? 'scale-110' : ''} ${uploadError ? 'bg-red-500/10 border-red-500/50' : 'bg-zinc-800 border-zinc-700'}`}>
                         {isGenerating ? (
                             <CpuChipIcon className="w-6 h-6 text-blue-400 animate-spin-slow" />
+                        ) : uploadError ? (
+                            <ExclamationCircleIcon className="w-6 h-6 text-red-400" />
                         ) : (
                             <ArrowUpTrayIcon className={`w-6 h-6 text-zinc-300 transition-all duration-300 ${isDragging ? 'text-blue-400' : ''}`} />
                         )}
                     </div>
-                    <p className="text-zinc-500 text-sm font-light tracking-wide">
-                        Click or drag an image to start
-                    </p>
+                    <div className="flex flex-col items-center">
+                        {uploadError ? (
+                            <p className="text-red-400 text-sm font-medium animate-pulse">{uploadError}</p>
+                        ) : (
+                            <p className="text-zinc-500 text-sm font-light tracking-wide">
+                                Click or drag an image to start
+                            </p>
+                        )}
+                    </div>
                 </div>
             </div>
 

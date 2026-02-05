@@ -8,7 +8,7 @@ import { InputArea } from './components/InputArea';
 import { LivePreview } from './components/LivePreview';
 import { CreationHistory, Creation } from './components/CreationHistory';
 import { bringToLife, refineApp } from './services/gemini';
-import { ArrowUpTrayIcon } from '@heroicons/react/24/solid';
+import { ArrowUpTrayIcon, ExclamationCircleIcon, XMarkIcon } from '@heroicons/react/24/outline'; // Changed import source to match icon style
 
 const App: React.FC = () => {
   const [activeCreation, setActiveCreation] = useState<Creation | null>(null);
@@ -17,6 +17,7 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<Creation[]>([]);
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null); // New error state
   const importInputRef = useRef<HTMLInputElement>(null);
 
   // Load history
@@ -55,7 +56,7 @@ const App: React.FC = () => {
                   setHistory(smallerHistory); // Sync state with reality
               } else {
                   console.error("Item too large for localStorage even alone.");
-                  alert("Storage full. History not saved.");
+                  showError("Storage full. History not saved.");
               }
           }
       }
@@ -96,9 +97,16 @@ const App: React.FC = () => {
       return "An unexpected error occurred. Please try again.";
   };
 
+  const showError = (message: string) => {
+      setError(message);
+      // Auto-hide after 6 seconds
+      setTimeout(() => setError(null), 6000);
+  };
+
   const handleGenerate = async (promptText: string, file?: File, style?: string, customCss?: string) => {
     setIsGenerating(true);
     setActiveCreation(null);
+    setError(null);
 
     try {
       let imageBase64: string | undefined;
@@ -125,7 +133,7 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error("Failed to generate:", error);
-      alert(getFriendlyErrorMessage(error));
+      showError(getFriendlyErrorMessage(error));
     } finally {
       setIsGenerating(false);
     }
@@ -145,6 +153,7 @@ const App: React.FC = () => {
     if (!activeCreation) return;
     
     setIsRefining(true);
+    setError(null);
     try {
         let base64Image: string | undefined;
         let mimeType: string | undefined;
@@ -168,7 +177,7 @@ const App: React.FC = () => {
         }
     } catch (error) {
         console.error("Refinement failed:", error);
-        alert(getFriendlyErrorMessage(error));
+        showError(getFriendlyErrorMessage(error));
     } finally {
         setIsRefining(false);
     }
@@ -204,6 +213,7 @@ const App: React.FC = () => {
     setActiveCreation(null);
     setIsGenerating(false);
     setIsRefining(false);
+    setError(null);
   };
 
   const handleSelectCreation = (creation: Creation) => {
@@ -237,11 +247,11 @@ const App: React.FC = () => {
                 });
                 setActiveCreation(importedCreation);
             } else {
-                alert("Invalid creation file format.");
+                showError("Invalid creation file format.");
             }
         } catch (err) {
             console.error("Import error", err);
-            alert("Failed to import creation. The file might be corrupted.");
+            showError("Failed to import creation. The file might be corrupted.");
         }
         if (importInputRef.current) importInputRef.current.value = '';
     };
@@ -252,6 +262,24 @@ const App: React.FC = () => {
 
   return (
     <div className="h-[100dvh] bg-zinc-950 bg-dot-grid text-zinc-50 selection:bg-blue-500/30 overflow-y-auto overflow-x-hidden relative flex flex-col">
+      {/* Error Toast */}
+      {error && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md">
+            <div className="bg-red-500/10 border border-red-500/50 backdrop-blur-md text-red-200 px-4 py-3 rounded-xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                <ExclamationCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div className="flex-1 text-sm font-medium leading-relaxed">
+                    {error}
+                </div>
+                <button 
+                    onClick={() => setError(null)} 
+                    className="text-red-400 hover:text-red-200 transition-colors p-0.5 rounded-lg hover:bg-red-500/20"
+                >
+                    <XMarkIcon className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+      )}
+
       <div 
         className={`
           min-h-full flex flex-col w-full max-w-7xl mx-auto px-4 sm:px-6 relative z-10 
@@ -291,6 +319,7 @@ const App: React.FC = () => {
         isLoading={isGenerating}
         isRefining={isRefining}
         isFocused={isFocused}
+        error={error}
         onReset={handleReset}
         onRefine={handleRefine}
         onUndo={handleUndo}

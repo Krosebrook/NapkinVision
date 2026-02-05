@@ -52,7 +52,7 @@ export async function bringToLife(prompt: string, fileBase64?: string, mimeType?
   }
 
   if (customCss) {
-      finalPrompt += `\n\nTECHNICAL REQUIREMENT: You MUST include the following custom CSS rules in the <style> block of the generated application. These rules should take priority and define the visual identity of the app:\n\n${customCss}`;
+      finalPrompt += `\n\nDESIGN REQUIREMENT - CUSTOM CSS:\nThe user has provided specific CSS rules that MUST be applied. \n1. Insert these rules into the <style> tag.\n2. Ensure your HTML markup uses the class names defined in this CSS.\n3. These rules take precedence over default styles.\n\nCUSTOM CSS:\n${customCss}`;
   }
 
   parts.push({ text: finalPrompt });

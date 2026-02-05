@@ -9,7 +9,8 @@ import {
     DevicePhoneMobileIcon, ComputerDesktopIcon, MicrophoneIcon,
     ArrowUturnLeftIcon, ArrowUturnRightIcon, CommandLineIcon,
     CursorArrowRaysIcon, EyeIcon, PencilSquareIcon, TrashIcon,
-    SwatchIcon, ArrowsPointingOutIcon
+    SwatchIcon, ArrowsPointingOutIcon, ExclamationTriangleIcon,
+    CheckIcon, ChevronLeftIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 
@@ -18,6 +19,7 @@ interface LivePreviewProps {
   isLoading: boolean;
   isRefining?: boolean;
   isFocused: boolean;
+  error?: string | null;
   onReset: () => void;
   onRefine: (instruction: string) => void;
   onUndo?: () => void;
@@ -51,6 +53,8 @@ interface ContextMenuState {
   targetTagName?: string;
   targetInnerHtml?: string;
 }
+
+type EditAction = 'text' | 'color' | 'size' | null;
 
 const LoadingStep = ({ text, active, completed }: { text: string, active: boolean, completed: boolean }) => (
     <div className={`flex items-center space-x-3 transition-all duration-500 ${active || completed ? 'opacity-100 translate-x-0' : 'opacity-30 translate-x-4'}`}>
@@ -134,7 +138,7 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
 };
 
 export const LivePreview: React.FC<LivePreviewProps> = ({ 
-    creation, isLoading, isRefining = false, isFocused, 
+    creation, isLoading, isRefining = false, isFocused, error,
     onReset, onRefine, onUndo, onRedo, canUndo, canRedo 
 }) => {
     const [loadingStep, setLoadingStep] = useState(0);
@@ -146,7 +150,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
     
     const [interactionMode, setInteractionMode] = useState<InteractionMode>('interact');
     const [inspectedElement, setInspectedElement] = useState<InspectedElement | null>(null);
+    
+    // Context Menu State
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, visible: false });
+    const [editAction, setEditAction] = useState<EditAction>(null);
+    const [editInputValue, setEditInputValue] = useState("");
+    
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     useEffect(() => {
@@ -168,6 +177,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             setShowSplitView(false);
         }
     }, [creation]);
+
+    // Reset interaction states when closing menu or changing modes
+    useEffect(() => {
+        if (!contextMenu.visible) {
+            setEditAction(null);
+            setEditInputValue("");
+        }
+    }, [contextMenu.visible]);
 
     useEffect(() => {
         const iframe = iframeRef.current;
@@ -231,6 +248,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                         className: target.className.replace('gemini-inspector-hover', '').trim(),
                         text: target.innerText.substring(0, 100),
                         computedStyles: {
+                            width: computed.width,
+                            height: computed.height,
+                            display: computed.display,
+                            position: computed.position,
+                            flexDirection: computed.flexDirection,
+                            justifyContent: computed.justifyContent,
+                            alignItems: computed.alignItems,
                             color: computed.color,
                             backgroundColor: computed.backgroundColor,
                             fontSize: computed.fontSize,
@@ -240,8 +264,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                             margin: computed.margin,
                             borderRadius: computed.borderRadius,
                             border: computed.border,
-                            display: computed.display,
-                            position: computed.position
                         }
                     });
                 } else if (interactionMode === 'edit') {
@@ -256,9 +278,18 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                          description += ` (current text: "${target.innerText.substring(0, 20)}...")`;
                     }
 
+                    // Simple clamp logic for context menu
+                    let menuX = iframeRect.left + e.clientX;
+                    let menuY = iframeRect.top + e.clientY;
+                    const menuWidth = 240;
+                    const menuHeight = 200;
+
+                    if (menuX + menuWidth > window.innerWidth) menuX -= menuWidth;
+                    if (menuY + menuHeight > window.innerHeight) menuY -= menuHeight;
+
                     setContextMenu({
-                        x: iframeRect.left + e.clientX,
-                        y: iframeRect.top + e.clientY,
+                        x: menuX,
+                        y: menuY,
                         visible: true,
                         targetDescription: description,
                         targetTagName: target.tagName.toLowerCase(),
@@ -329,33 +360,37 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         }
     };
 
-    const handleContextMenuAction = (action: string) => {
+    const initEditAction = (action: EditAction) => {
+        setEditAction(action);
+        setEditInputValue(""); // Reset input
+    };
+
+    const submitEditAction = () => {
         if (!contextMenu.targetDescription) return;
-        
+
         let prompt = "";
-        switch(action) {
+        switch(editAction) {
             case 'color':
-                const color = window.prompt("New color or theme (e.g. 'ocean blue', '#ff5500', 'soft gradients'):");
-                if (color) prompt = `Update the style of the element [${contextMenu.targetDescription}] to use ${color}.`;
+                if (editInputValue) prompt = `Update the style of the element [${contextMenu.targetDescription}] to use ${editInputValue}.`;
                 break;
             case 'text':
-                const text = window.prompt("Enter the new text content:");
-                if (text !== null) prompt = `Change the text content of the element [${contextMenu.targetDescription}] to "${text}".`;
+                if (editInputValue) prompt = `Change the text content of the element [${contextMenu.targetDescription}] to "${editInputValue}".`;
                 break;
             case 'size':
-                const size = window.prompt("New size or dimensions (e.g. 'larger', 'wider', 'height: 400px'):");
-                if (size) prompt = `Adjust the size/scale of the element [${contextMenu.targetDescription}] to be ${size}.`;
-                break;
-            case 'delete':
-                if (window.confirm("Are you sure you want to remove this element?")) {
-                    prompt = `Remove the element [${contextMenu.targetDescription}] completely from the application.`;
-                }
+                if (editInputValue) prompt = `Adjust the size/scale of the element [${contextMenu.targetDescription}] to be ${editInputValue}.`;
                 break;
         }
 
         if (prompt) {
             onRefine(prompt);
+            setContextMenu(prev => ({ ...prev, visible: false }));
         }
+    };
+
+    const handleDelete = () => {
+        if (!contextMenu.targetDescription) return;
+        const prompt = `Remove the element [${contextMenu.targetDescription}] completely from the application.`;
+        onRefine(prompt);
         setContextMenu(prev => ({ ...prev, visible: false }));
     };
 
@@ -533,37 +568,71 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
 
         {contextMenu.visible && interactionMode === 'edit' && (
             <div 
-                className="fixed z-[60] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200"
+                className="fixed z-[60] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden min-w-[240px] animate-in fade-in slide-in-from-top-2 duration-200"
                 style={{ top: contextMenu.y + 10, left: contextMenu.x }}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-950/50 flex items-center justify-between">
-                    <p className="text-[10px] font-mono uppercase text-zinc-400 tracking-wider">
+                    <p className="text-[10px] font-mono uppercase text-zinc-400 tracking-wider truncate max-w-[180px]">
                         {contextMenu.targetTagName}
                     </p>
                     <button onClick={() => setContextMenu({ ...contextMenu, visible: false })}>
                         <XMarkIcon className="w-3 h-3 text-zinc-600 hover:text-zinc-400" />
                     </button>
                 </div>
-                <div className="p-1.5 space-y-0.5">
-                    <button onClick={() => handleContextMenuAction('text')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
-                        <PencilSquareIcon className="w-4 h-4 text-zinc-500" />
-                        <span>Edit Text</span>
-                    </button>
-                    <button onClick={() => handleContextMenuAction('color')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
-                        <SwatchIcon className="w-4 h-4 text-zinc-500" />
-                        <span>Change Style</span>
-                    </button>
-                    <button onClick={() => handleContextMenuAction('size')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
-                        <ArrowsPointingOutIcon className="w-4 h-4 text-zinc-500" />
-                        <span>Adjust Dimensions</span>
-                    </button>
-                    <div className="h-px bg-zinc-800 my-1 mx-2"></div>
-                    <button onClick={() => handleContextMenuAction('delete')} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-md flex items-center gap-2.5 transition-colors">
-                        <TrashIcon className="w-4 h-4 opacity-70" />
-                        <span>Remove Element</span>
-                    </button>
-                </div>
+                
+                {editAction ? (
+                     <div className="p-3">
+                         <label className="block text-[10px] font-medium text-zinc-500 mb-1.5 uppercase tracking-wider">
+                             {editAction === 'text' ? 'New Content' : editAction === 'color' ? 'Color / Style' : 'Dimensions'}
+                         </label>
+                         <div className="flex gap-2 mb-2">
+                             <input 
+                                autoFocus
+                                type="text"
+                                value={editInputValue}
+                                onChange={(e) => setEditInputValue(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && submitEditAction()}
+                                placeholder={editAction === 'color' ? 'e.g. blue-500, #ff0000' : 'Value...'}
+                                className="w-full bg-zinc-950 border border-zinc-700 rounded text-xs px-2 py-1.5 text-zinc-200 focus:outline-none focus:border-blue-500"
+                             />
+                         </div>
+                         <div className="flex justify-between items-center">
+                             <button 
+                                onClick={() => setEditAction(null)}
+                                className="text-[10px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1"
+                             >
+                                <ChevronLeftIcon className="w-3 h-3" /> Back
+                             </button>
+                             <button 
+                                onClick={submitEditAction}
+                                className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-medium px-2 py-1 rounded flex items-center gap-1"
+                             >
+                                <CheckIcon className="w-3 h-3" /> Apply
+                             </button>
+                         </div>
+                     </div>
+                ) : (
+                    <div className="p-1.5 space-y-0.5">
+                        <button onClick={() => initEditAction('text')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
+                            <PencilSquareIcon className="w-4 h-4 text-zinc-500" />
+                            <span>Edit Text</span>
+                        </button>
+                        <button onClick={() => initEditAction('color')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
+                            <SwatchIcon className="w-4 h-4 text-zinc-500" />
+                            <span>Change Style</span>
+                        </button>
+                        <button onClick={() => initEditAction('size')} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 rounded-md flex items-center gap-2.5 transition-colors">
+                            <ArrowsPointingOutIcon className="w-4 h-4 text-zinc-500" />
+                            <span>Adjust Dimensions</span>
+                        </button>
+                        <div className="h-px bg-zinc-800 my-1 mx-2"></div>
+                        <button onClick={handleDelete} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-md flex items-center gap-2.5 transition-colors">
+                            <TrashIcon className="w-4 h-4 opacity-70" />
+                            <span>Remove Element</span>
+                        </button>
+                    </div>
+                )}
             </div>
         )}
 
@@ -589,6 +658,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                  </div>
              </div>
           </div>
+        ) : error ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-8 w-full">
+                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-8 max-w-md text-center">
+                    <ExclamationTriangleIcon className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                    <h3 className="text-xl font-bold text-red-200 mb-2">Generation Failed</h3>
+                    <p className="text-red-300/80 mb-6">{error}</p>
+                    <button 
+                        onClick={onReset}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors font-medium text-sm"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            </div>
         ) : creation?.html ? (
           <>
             {showSplitView && creation.originalImage && (
@@ -636,7 +719,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                     <div className="flex items-center justify-between mb-3 border-b border-zinc-800 pb-2">
                         <div className="flex items-center gap-2">
                              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                             <span className="font-bold text-blue-400 uppercase text-xs">{inspectedElement.tagName}</span>
+                             <span className="font-bold text-blue-400 uppercase text-xs">Inspector</span>
                         </div>
                         <button onClick={() => setInspectedElement(null)}>
                             <XMarkIcon className="w-3 h-3 text-zinc-600 hover:text-zinc-400" />
@@ -644,31 +727,25 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                     </div>
                     
                     <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1 custom-scrollbar">
-                        {inspectedElement.id && (
-                            <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800">
-                                <span className="text-zinc-500 mr-2">ID:</span>
-                                <span className="text-orange-400">#{inspectedElement.id}</span>
-                            </div>
-                        )}
+                        {/* HTML Tag Representation */}
+                        <div className="bg-zinc-950/50 p-2.5 rounded border border-zinc-800 font-mono text-[10px] break-all">
+                             <span className="text-blue-400">&lt;{inspectedElement.tagName}</span>
+                             {inspectedElement.id && (
+                                <> <span className="text-orange-300">id</span><span className="text-zinc-500">=</span><span className="text-green-300">"{inspectedElement.id}"</span></>
+                             )}
+                             {inspectedElement.className && (
+                                <> <span className="text-orange-300">class</span><span className="text-zinc-500">=</span><span className="text-green-300">"{inspectedElement.className}"</span></>
+                             )}
+                             <span className="text-blue-400">&gt;</span>
+                        </div>
                         
-                        {inspectedElement.className && (
-                            <div className="bg-zinc-950/50 p-2 rounded border border-zinc-800">
-                                <span className="text-zinc-500 block mb-1">Classes:</span>
-                                <div className="flex flex-wrap gap-1">
-                                    {inspectedElement.className.split(' ').map((cls, i) => (
-                                        <span key={i} className="text-yellow-600">.{cls}</span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
                         <div className="space-y-2">
                             <span className="text-zinc-500 uppercase text-[9px] font-bold tracking-widest">Computed Styles</span>
                             <div className="grid grid-cols-1 gap-1.5">
                                 {Object.entries(inspectedElement.computedStyles).map(([key, value]) => (
                                     <div key={key} className="flex justify-between items-center py-1 border-b border-zinc-800/50 last:border-0">
                                         <span className="text-zinc-500">{key.replace(/([A-Z])/g, '-$1').toLowerCase()}</span>
-                                        <span className="text-zinc-200 text-right">{value}</span>
+                                        <span className="text-zinc-200 text-right truncate max-w-[120px]" title={value}>{value}</span>
                                     </div>
                                 ))}
                             </div>
